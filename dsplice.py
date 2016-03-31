@@ -15,12 +15,20 @@ from docker import Client
 log = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
 
-def merge_dirs(paths, outpath):
+def merge_dirs(paths, outpath, auto=True):
     #resolve all conflicts
     for fpath,imgpaths in get_conflicts(paths).items():
         print('\nfilepath conflict: %s' % fpath)
-        print('overwrite from source:')
-        choice = getchoice(list(imgpaths))
+        if auto:
+            # chose the file most recently modified
+            mtimes = {}
+            for i in imgpaths:
+                mtimes[os.path.getmtime('%s/%s' % (i, fpath))] = i
+            choice = mtimes[max(mtimes.keys())]
+            print('using newer file from: %s' % choice)
+        else:
+            print('overwrite from source:')
+            choice = getchoice(list(imgpaths))
         #remove conflicting file from all other images
         rmpaths = [ '%s/%s' % (i, fpath) for i in imgpaths if i != choice ]
         for p in rmpaths:
@@ -94,9 +102,9 @@ def main(merge_images):
 
     client = Client(base_url='unix://var/run/docker.sock')
     
-    new_image_dir = tempfile.mkdtemp() 
-    layers_dir = new_image_dir + '/layers'
-    build_dir = new_image_dir + '/build'
+    work_dir = tempfile.mkdtemp() 
+    layers_dir = work_dir + '/layers'
+    build_dir = work_dir + '/build'
     os.mkdir(layers_dir)
     os.mkdir(build_dir)
     images = []
@@ -125,7 +133,7 @@ def main(merge_images):
     
         shutil.rmtree(tmpdir)
     
-        extract_dir = '%s/%s' % (new_image_dir, img.replace('/', '-'))
+        extract_dir = '%s/%s' % (work_dir, img.replace('/', '-'))
         os.mkdir(extract_dir)
     
         rprint('%s: done\n' % (img))
@@ -152,16 +160,16 @@ def main(merge_images):
             tar.extractall(i['dir'])
     rprint('extracting unique layers: done\n')
     
-    print(build_dir)
     merge_dirs([ i['dir'] for i in images ], build_dir)
     rprint('building new image...\n')
-    arcpath = '%s/image.tar' % new_image_dir
+    arcpath = '%s/image.tar' % work_dir
     tar = tarfile.open(arcpath, mode='a')
     tar.add(build_dir, arcname='/')
 
     print('importing...')
     client.import_image(arcpath)
 
+    shutil.rmtree(work_dir)
     print('done!')
 
 if __name__ == '__main__':
