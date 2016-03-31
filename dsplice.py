@@ -43,7 +43,7 @@ def copy_contents(srcdir, dstdir):
 
             if not os.path.islink(dstfile):
                 log.debug('cp %s -> %s' % (srcfile,dstfile))
-                shutil.copy2(srcfile, dstfile)
+                shutil.copy2(srcfile, dstfile, follow_symlinks=False)
 
 def diff_dirs(path1, path2, diff=[]):
     def parse_diff(result, prefix=''):
