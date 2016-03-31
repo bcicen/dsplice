@@ -8,12 +8,12 @@ import logging
 import shutil
 import hashlib
 import filecmp
+from time import sleep
 from collections import defaultdict
 from docker import Client
 
 log = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
-
 
 def merge_dirs(paths, outpath):
     #resolve all conflicts
@@ -26,6 +26,7 @@ def merge_dirs(paths, outpath):
         for p in rmpaths:
             os.remove(p)
 
+    print('\npopulating image...')
     for path in paths:
         copy_contents(path, outpath)
 
@@ -43,6 +44,7 @@ def copy_contents(srcdir, dstdir):
 
             if not os.path.islink(dstfile):
                 log.debug('cp %s -> %s' % (srcfile,dstfile))
+                rprint(filebase)
                 shutil.copy2(srcfile, dstfile, follow_symlinks=False)
 
 def diff_dirs(path1, path2, diff=[]):
@@ -84,10 +86,14 @@ def getchoice(opts):
     print()
     return selected
 
+def rprint(msg):
+    sys.stdout.write("\033[K")
+    print(msg, end='\r')
+
 def main(merge_images):
 
     client = Client(base_url='unix://var/run/docker.sock')
-     
+    
     new_image_dir = tempfile.mkdtemp() 
     layers_dir = new_image_dir + '/layers'
     build_dir = new_image_dir + '/build'
@@ -95,22 +101,24 @@ def main(merge_images):
     os.mkdir(build_dir)
     images = []
 
+    print('exporting images...')
     for img in merge_images:
-        log.info('exporting %s' % img)
+        print('%s: exporting' % img, end='')
         res = client.get_image(img)
     
-        log.info('extracting %s' % img)
+        rprint('%s: extracting' % img)
         tmpdir = tempfile.mkdtemp()
         tarfile.open(fileobj=io.BytesIO(res.data), mode='r|').extractall(tmpdir)
     
         with open(tmpdir + '/manifest.json') as of:
-            layers = json.loads(of.read())[0]['Layers']
-        layers = [ l.split('/')[0] for l in layers ] 
+            layers = [ l.split('/')[0] for l in \
+                       json.loads(of.read())[0]['Layers'] ]
     
         #move all layers to common folder
         for layer in layers:
             src = '%s/%s/layer.tar' % (tmpdir, layer)
             dst = '%s/%s.tar' % (layers_dir, layer)
+            rprint('%s: gathering layer %s' % (img, layer))
             if not os.path.exists(dst):
                 shutil.move(src, dst)
                 log.debug('mv %s -> %s' % (src,dst))
@@ -120,25 +128,29 @@ def main(merge_images):
         extract_dir = '%s/%s' % (new_image_dir, img.replace('/', '-'))
         os.mkdir(extract_dir)
     
+        rprint('%s: done\n' % (img))
         images.append({ 'name': img, 'layers': layers, 'dir': extract_dir  })
     
     all_layers = [ i['layers'] for i in images ]
     shared_layers = set(all_layers[0]).intersection(*all_layers[1:])
     
     #create image base using shared layers
-    log.info('assembling new image')
+    print('\nextracting image layers...')
     for layer in images[0]['layers']:
         if layer in shared_layers:
-            log.info('adding shared layer: %s' % layer)
+            rprint('extracting shared layers: %s' % layer)
             tar = tarfile.open('%s/%s.tar' % (layers_dir, layer))
             tar.extractall(build_dir)
+    rprint('extracting shared layers: done\n')
     
     #extract all layers for each image to own dir
     for i in images:
         uniq_layers = [ l for l in i['layers'] if l not in shared_layers ]
         for layer in uniq_layers:
+            rprint('extracting unique layers: %s' % layer)
             tar = tarfile.open('%s/%s.tar' % (layers_dir, layer))
             tar.extractall(i['dir'])
+    rprint('extracting unique layers: done\n')
     
     print(build_dir)
     merge_dirs([ i['dir'] for i in images ], build_dir)
