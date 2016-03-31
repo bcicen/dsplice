@@ -154,6 +154,15 @@ def main(merge_images):
     
     print(build_dir)
     merge_dirs([ i['dir'] for i in images ], build_dir)
+    rprint('building new image...\n')
+    arcpath = '%s/image.tar' % new_image_dir
+    tar = tarfile.open(arcpath, mode='a')
+    tar.add(build_dir, arcname='/')
+
+    print('importing...')
+    client.import_image(arcpath)
+
+    print('done!')
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
