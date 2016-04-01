@@ -56,7 +56,8 @@ def copy_contents(srcdir, dstdir):
                 rprint(filebase)
                 shutil.copy2(srcfile, dstfile, follow_symlinks=False)
 
-def diff_dirs(path1, path2, diff=[]):
+def diff_dirs(path1, path2):
+    diff = []
     def parse_diff(result, prefix=''):
         for f in result.diff_files:
             if prefix:
