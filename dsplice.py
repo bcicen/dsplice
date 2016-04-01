@@ -1,34 +1,35 @@
-import io
 import os
 import sys
+import io
 import json
 import tarfile
 import tempfile
 import logging
 import shutil
-import hashlib
 import filecmp
-from time import sleep
-from collections import defaultdict
 from docker import Client
+from collections import defaultdict
+from argparse import ArgumentParser
 
 log = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
 
-def merge_dirs(paths, outpath, auto=True):
+version = '0.2'
+
+def merge_dirs(paths, outpath, interactive=True):
     #resolve all conflicts
     for fpath,imgpaths in get_conflicts(paths).items():
         print('\nfilepath conflict: %s' % fpath)
-        if auto:
+        if interactive:
+            print('overwrite from source:')
+            choice = getchoice(list(imgpaths))
+        else:
             # chose the file most recently modified
             mtimes = {}
             for i in imgpaths:
                 mtimes[os.path.getmtime('%s/%s' % (i, fpath))] = i
             choice = mtimes[max(mtimes.keys())]
             print('using newer file from: %s' % choice)
-        else:
-            print('overwrite from source:')
-            choice = getchoice(list(imgpaths))
         #remove conflicting file from all other images
         rmpaths = [ '%s/%s' % (i, fpath) for i in imgpaths if i != choice ]
         for p in rmpaths:
@@ -98,7 +99,11 @@ def rprint(msg):
     sys.stdout.write("\033[K")
     print(msg, end='\r')
 
-def main(merge_images):
+def dsplice(merge_images, tag=None, interactive=False, skip_import=False):
+
+    if len(merge_images) < 2:
+        print('at least two images must be provided for merge')
+        return
 
     client = Client(base_url='unix://var/run/docker.sock')
     
@@ -107,6 +112,7 @@ def main(merge_images):
     build_dir = work_dir + '/build'
     os.mkdir(layers_dir)
     os.mkdir(build_dir)
+
     images = []
 
     print('exporting images...')
@@ -160,20 +166,45 @@ def main(merge_images):
             tar.extractall(i['dir'])
     rprint('extracting unique layers: done\n')
     
-    merge_dirs([ i['dir'] for i in images ], build_dir)
+    merge_dirs([ i['dir'] for i in images ], build_dir, interactive=interactive)
     rprint('building new image...\n')
     arcpath = '%s/image.tar' % work_dir
     tar = tarfile.open(arcpath, mode='a')
     tar.add(build_dir, arcname='/')
 
-    print('importing...')
-    client.import_image(arcpath)
+    if skip_import:
+        shutil.move(arcpath, os.getcwd())
+    else:
+        print('importing...')
+        if tag:
+            client.import_image(arcpath, tag=tag)
+        else:
+            client.import_image(arcpath)
 
     shutil.rmtree(work_dir)
     print('done!')
 
+def main():
+    parser = ArgumentParser(description='dsplice %s' % version)
+    parser.add_argument('-i', dest='interactive',
+            action='store_true',
+            help='Interactive mode. Prompt for user selection \
+                  on any file conflicts')
+    parser.add_argument('-t', dest='image_tag',
+            help='Optional tag for created image',
+            default=None)
+    parser.add_argument('-s', dest='skip_import',
+            action='store_true',
+            help='Skip importing of image and create container \
+                  archive in current directory')
+    parser.add_argument('merge_images', nargs='*',
+            help='Images to merge')
+
+    args = parser.parse_args()
+    dsplice(args.merge_images,
+            tag=args.image_tag, 
+            interactive=args.interactive,
+            skip_import=args.skip_import)
+
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print('usage: %s image1:latest image2:latest ...' % sys.argv[0])
-        sys.exit(1)
-    main(sys.argv[1:])
+    main()
