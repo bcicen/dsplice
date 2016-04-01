@@ -178,7 +178,7 @@ def dsplice(merge_images, tag=None, interactive=False, skip_import=False):
     else:
         print('importing...')
         if tag:
-            client.import_image(arcpath, tag=tag)
+            client.import_image(arcpath, repository=tag)
         else:
             client.import_image(arcpath)
 
