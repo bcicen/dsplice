@@ -9,12 +9,9 @@ import shutil
 import filecmp
 from docker import Client
 from collections import defaultdict
-from argparse import ArgumentParser
 
 log = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
-
-version = '0.2'
 
 def merge_dirs(paths, outpath, interactive=True):
     #resolve all conflicts
@@ -184,28 +181,3 @@ def dsplice(merge_images, tag=None, interactive=False, skip_import=False):
 
     shutil.rmtree(work_dir)
     print('done!')
-
-def main():
-    parser = ArgumentParser(description='dsplice %s' % version)
-    parser.add_argument('-i', dest='interactive',
-            action='store_true',
-            help='Interactive mode. Prompt for user selection \
-                  on any file conflicts')
-    parser.add_argument('-t', dest='image_tag',
-            help='Optional tag for created image',
-            default=None)
-    parser.add_argument('-s', dest='skip_import',
-            action='store_true',
-            help='Skip importing of image and create container \
-                  archive in current directory')
-    parser.add_argument('merge_images', nargs='*',
-            help='Images to merge')
-
-    args = parser.parse_args()
-    dsplice(args.merge_images,
-            tag=args.image_tag, 
-            interactive=args.interactive,
-            skip_import=args.skip_import)
-
-if __name__ == '__main__':
-    main()
